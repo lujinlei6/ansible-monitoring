@@ -1,0 +1,90 @@
+# ============================================================
+# 文件：roles/alertmanager/tasks/main.yml
+# 功能：安装 alertmanager/amtool、分发配置与邮件模板、systemd 常驻
+# ============================================================
+---
+- name: 检查 alertmanager 二进制是否已安装
+  ansible.builtin.stat:
+    path: /usr/local/bin/alertmanager
+  register: am_binary
+
+- name: 从 ops 本机拷贝 Alertmanager 安装包到目标机
+  ansible.builtin.copy:
+    src: "{{ local_package_dir }}/alertmanager-{{ alertmanager_version }}.linux-amd64.tar.gz"
+    dest: "{{ alertmanager_package }}"
+    mode: "0644"
+  when: not am_binary.stat.exists
+
+- name: 解压安装包
+  ansible.builtin.unarchive:
+    src: "{{ alertmanager_package }}"
+    dest: /tmp/
+    remote_src: true
+  when: not am_binary.stat.exists
+
+- name: 安装二进制（alertmanager + amtool）
+  ansible.builtin.copy:
+    src: "{{ alertmanager_dir }}/{{ item }}"
+    dest: "/usr/local/bin/{{ item }}"
+    mode: "0755"
+    remote_src: true
+  loop: [alertmanager, amtool]
+  when: not am_binary.stat.exists
+
+- name: 创建配置与数据目录
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: prometheus
+    group: prometheus
+    mode: "0755"
+  loop:
+    - /etc/alertmanager
+    - /etc/alertmanager/templates
+    - /var/lib/alertmanager
+
+- name: 分发主配置文件
+  ansible.builtin.template:
+    src: alertmanager.yml.j2
+    dest: /etc/alertmanager/alertmanager.yml
+    owner: root
+    group: prometheus
+    mode: "0640"
+  notify: restart alertmanager
+
+- name: 分发邮件模板
+  ansible.builtin.copy:
+    src: email.tmpl
+    dest: /etc/alertmanager/templates/email.tmpl
+    owner: root
+    group: prometheus
+    mode: "0640"
+  notify: restart alertmanager
+
+- name: 部署 systemd 服务
+  ansible.builtin.template:
+    src: alertmanager.service.j2
+    dest: /etc/systemd/system/alertmanager.service
+    mode: "0644"
+  notify: restart alertmanager
+
+- name: 启动服务并设置开机自启
+  ansible.builtin.systemd:
+    name: alertmanager
+    state: started
+    enabled: true
+    daemon_reload: true
+
+- name: 配置检查（amtool）
+  ansible.builtin.command: /usr/local/bin/amtool check-config /etc/alertmanager/alertmanager.yml
+  register: amtool_check
+  changed_when: false
+  failed_when: amtool_check.rc != 0
+
+- name: 清理临时文件
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ alertmanager_package }}"
+    - "{{ alertmanager_dir }}"

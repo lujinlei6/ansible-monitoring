@@ -1,0 +1,54 @@
+# ============================================================
+# 文件：roles/node_exporter/tasks/main.yml
+# 功能：安装 node_exporter 二进制并以 systemd 服务常驻
+# 幂等：已安装则跳过下载/解压（想强制重装：删除 /usr/local/bin/node_exporter 再执行）
+# ============================================================
+---
+- name: 检查 node_exporter 是否已安装
+  ansible.builtin.stat:
+    path: /usr/local/bin/node_exporter
+  register: ne_binary
+
+- name: 从 ops 本机拷贝 node_exporter 安装包到目标机
+  ansible.builtin.copy:
+    src: "{{ local_package_dir }}/node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz"
+    dest: "{{ node_exporter_package }}"
+    mode: "0644"
+  when: not ne_binary.stat.exists
+
+- name: 解压安装包
+  ansible.builtin.unarchive:
+    src: "{{ node_exporter_package }}"
+    dest: /tmp/
+    remote_src: true
+  when: not ne_binary.stat.exists
+
+- name: 安装二进制到 /usr/local/bin
+  ansible.builtin.copy:
+    src: "{{ node_exporter_dir }}/node_exporter"
+    dest: /usr/local/bin/node_exporter
+    mode: "0755"
+    remote_src: true
+  when: not ne_binary.stat.exists
+
+- name: 部署 systemd 服务文件
+  ansible.builtin.template:
+    src: node_exporter.service.j2
+    dest: /etc/systemd/system/node_exporter.service
+    mode: "0644"
+  notify: restart node_exporter
+
+- name: 启动服务并设置开机自启
+  ansible.builtin.systemd:
+    name: node_exporter
+    state: started
+    enabled: true
+    daemon_reload: true
+
+- name: 清理临时文件
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ node_exporter_package }}"
+    - "{{ node_exporter_dir }}"

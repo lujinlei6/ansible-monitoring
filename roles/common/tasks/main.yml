@@ -1,0 +1,77 @@
+- name: 设置主机名（与 inventory 保持一致）
+  ansible.builtin.hostname:
+    name: "{{ inventory_hostname }}"
+
+- name: 下发 /etc/hosts（9 台互相解析 + 三个 VIP）
+  ansible.builtin.template:
+    src: hosts.j2
+    dest: /etc/hosts
+    owner: root
+    group: root
+    mode: "0644"
+    backup: true
+
+- name: 设置时区
+  ansible.builtin.command: "timedatectl set-timezone {{ lab_timezone }}"
+  changed_when: false
+
+- name: 实验环境 sudo 免密（4.3.1 的幂等版；生产改用 ansible-vault 管密码）
+  ansible.builtin.copy:
+    dest: /etc/sudoers.d/90-lab
+    owner: root
+    group: root
+    mode: "0440"
+    content: "{{ ansible_user }} ALL=(ALL) NOPASSWD:ALL\n"
+
+- name: 收集 rocky*.repo 文件（各节点模板版本不同，部分没有 security 独立文件）
+  ansible.builtin.find:
+    paths: /etc/yum.repos.d
+    patterns: 'rocky*.repo'
+  register: rocky_repos
+  when: ansible_distribution == 'Rocky'
+
+- name: 注释掉 Rocky 官方 mirrorlist（改用阿里云镜像）
+  ansible.builtin.replace:
+    path: "{{ item }}"
+    regexp: '^mirrorlist='
+    replace: '#mirrorlist='
+  loop: "{{ rocky_repos.files | default([]) | map(attribute='path') | list }}"
+  when: ansible_distribution == 'Rocky'
+
+- name: 启用阿里云 baseurl（dl.rockylinux.org → mirrors.aliyun.com/rockylinux）
+  ansible.builtin.replace:
+    path: "{{ item }}"
+    regexp: '^#baseurl=http://dl\.rockylinux\.org/\$contentdir/\$releasever/'
+    replace: 'baseurl=https://mirrors.aliyun.com/rockylinux/$releasever/'
+  loop: "{{ rocky_repos.files | default([]) | map(attribute='path') | list }}"
+  when: ansible_distribution == 'Rocky'
+
+- name: 重建 yum 缓存（让阿里云源立即生效）
+  ansible.builtin.command: dnf makecache
+  changed_when: false
+  when: ansible_distribution == 'Rocky'
+
+- name: 安装 tar（解压二进制安装包依赖；Rocky 10 最小化缺省）
+  ansible.builtin.dnf:
+    name: tar
+    state: present
+  when: ansible_distribution == 'Rocky'
+
+- name: 关闭 firewalld（实验环境统一关闭；要开着就按 2.4 端口表放行）
+  ansible.builtin.systemd:
+    name: firewalld
+    enabled: false
+    state: stopped
+  failed_when: false
+
+- name: 确保 /etc/selinux/config 为 enforcing（下个开机生效；已 enforcing 的节点幂等 no-op）
+  ansible.builtin.lineinfile:
+    path: /etc/selinux/config
+    regexp: '^SELINUX='
+    line: 'SELINUX=disabled'
+
+- name: 设置 SELinux 状态为 'disabled'
+  ansible.builtin.command: setenforce 0
+  register: selinux_state
+  changed_when: false
+  failed_when: false

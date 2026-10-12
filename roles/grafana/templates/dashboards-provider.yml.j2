@@ -1,0 +1,13 @@
+# 看板供应商配置：Grafana 启动时自动从该目录加载 JSON 看板
+# 分发到：/etc/grafana/provisioning/dashboards/default.yml
+apiVersion: 1
+providers:
+  - name: 'default'
+    orgId: 1
+    folder: 'k8s-mall'                # UI 中统一收纳到该文件夹
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards

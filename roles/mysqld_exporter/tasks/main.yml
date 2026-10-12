@@ -1,0 +1,31 @@
+# ============================================================
+# 文件：roles/mysqld_exporter/tasks/main.yml
+# 功能：在 K8s 集群内部署 mysqld_exporter（由 site.yml 的 Play2 调用，
+#       执行节点为第一台 master，因为要用该节点的 kubectl）
+# ============================================================
+---
+- name: 确保 exporter 命名空间存在（幂等）
+  ansible.builtin.shell: |
+    kubectl create namespace {{ exporter_namespace }} --dry-run=client -o yaml | kubectl apply -f -
+  changed_when: false
+
+- name: 渲染 mysqld_exporter 资源清单
+  ansible.builtin.template:
+    src: mysqld-exporter.yaml.j2
+    dest: /tmp/mysqld-exporter.yaml
+    mode: "0600"          # 清单内包含密码，临时文件收紧权限
+
+- name: 应用资源清单（kubectl apply）
+  ansible.builtin.command: kubectl apply -f /tmp/mysqld-exporter.yaml
+  register: mysqld_apply
+  changed_when: "'configured' in mysqld_apply.stdout or 'created' in mysqld_apply.stdout"
+
+- name: 等待 Deployment 就绪
+  ansible.builtin.command: >
+    kubectl -n {{ exporter_namespace }} rollout status deployment/mysqld-exporter --timeout=120s
+  changed_when: false
+
+- name: 清理临时清单文件
+  ansible.builtin.file:
+    path: /tmp/mysqld-exporter.yaml
+    state: absent

@@ -1,0 +1,64 @@
+# ============================================================
+# 全局变量：版本 / 下载地址 / 拓扑 / 密码
+# 除本文件与 inventory 外，其它文件均不需要按环境修改
+# ============================================================
+
+# ---------- 组件版本 ----------
+node_exporter_version: "1.8.2"
+prometheus_version: "2.53.2"
+alertmanager_version: "0.27.0"
+mysqld_exporter_version: "0.20.0"
+redis_exporter_version: "1.93.0"
+
+# ---------- 下载地址（GitHub 官方；先在 ops 本机下载，再分发给各节点）----------
+node_exporter_url: "https://github.com/prometheus/node_exporter/releases/download/v{{ node_exporter_version }}/node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz"
+prometheus_url:    "https://github.com/prometheus/prometheus/releases/download/v{{ prometheus_version }}/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
+alertmanager_url:  "https://github.com/prometheus/alertmanager/releases/download/v{{ alertmanager_version }}/alertmanager-{{ alertmanager_version }}.linux-amd64.tar.gz"
+
+# ops 本机暂存目录：先在 ops(192.168.1.83) 把所有二进制拉到本地，再通过 copy 分发给各节点
+local_package_dir: "/root/ansible-monitoring/packages"
+
+# ---------- 时区 ----------
+lab_timezone: "Asia/Shanghai"
+
+# ---------- 集群 VIP（common 角色下发 /etc/hosts 用；按你的 k8s API VIP 填写）----------
+k8s_api_vip: "192.168.1.50"
+
+# ---------- 监控机 ----------
+monitor_ip: "192.168.1.40"
+
+# ---------- 中间件 Exporter（按实际 Service 名替换！先用 kubectl get svc -A 确认）----------
+# 注意：mall4j 的 MySQL/Redis 部署在 kube-mall 命名空间（不是 mall），
+# FQDN 必须用 redis.mysql.kube-mall.svc.cluster.local，否则 exporter 解析不到
+mysql_host: "mysql.kube-mall.svc.cluster.local"
+mysql_port: "3306"
+mysql_exporter_user: "exporter"
+mysql_exporter_password: "Exporter@123"        # 与 5.2 节 MySQL 授权 SQL 中的密码保持一致
+mysqld_exporter_nodeport: 30104
+
+redis_host: "redis.kube-mall.svc.cluster.local"
+redis_port: "6379"
+redis_password: "Redis@123"                    # redis 容器内实际生效的密码（AUTH PONG 验证通过）
+redis_exporter_nodeport: 30121
+
+# kube-state-metrics（K8s 对象状态采集器：Pod phase/重启次数/副本数/PVC 状态等）
+# 镜像来自 registry.k8s.io，节点拉不下来时按文档 5.6 节说明转发到 Harbor
+kube_state_metrics_version: "2.16.0"
+kube_state_metrics_nodeport: 30108
+
+# 集群内 exporter 统一部署到该命名空间
+exporter_namespace: "monitoring"
+
+# ---------- 告警邮件（QQ 邮箱 SMTP）----------
+smtp_smarthost: "smtp.163.com:465"
+smtp_from: "lujinlei996@163.com"
+smtp_auth_password: "HBSTUqD2pt7TAAQ6"            # QQ 邮箱设置→账户→POP3/SMTP服务→生成授权码
+alert_email_to: "1172022610@qq.com"               # 收件邮箱（可与发件人相同）
+
+# ---------- 抓取目标（Prometheus 使用）----------
+# node_exporter 与 kubelet 目标自动从 inventory 的 k8s_masters/k8s_workers/monitor 组生成；
+# 中间件 exporter 的抓取地址：NodePort 会在"每个节点"上监听同一端口，kube-proxy 负责
+# 转发到 Pod 实际所在节点——所以写任意一个节点 IP 都能采集，与 Pod 调度位置无关，
+# 本文固定用 node1 只是"选一扇固定的门"；该节点整机故障时此 target 会 DOWN（属预期告警）。
+# 可选进阶：改成 keepalived VIP "192.168.172.100"，只要还有 master 存活就能采集。
+middleware_target_ip: "192.168.1.71"

@@ -1,0 +1,6 @@
+# ============================================================
+# node_exporter 角色默认变量（均可在 group_vars 中覆盖）
+# ============================================================
+node_exporter_listen: ":9100"                                  # 监听地址
+node_exporter_dir: "/tmp/node_exporter-{{ node_exporter_version }}.linux-amd64"
+node_exporter_package: "/tmp/node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz"

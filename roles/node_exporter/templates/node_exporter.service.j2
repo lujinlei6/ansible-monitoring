@@ -1,0 +1,17 @@
+# 由 Ansible 模板分发：roles/node_exporter/templates/node_exporter.service.j2
+[Unit]
+Description=Node Exporter (Prometheus Host Metrics)
+Documentation=https://github.com/prometheus/node_exporter
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/bin/node_exporter --web.listen-address={{ node_exporter_listen }}
+Restart=on-failure
+RestartSec=5s
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

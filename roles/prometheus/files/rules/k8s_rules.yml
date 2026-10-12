@@ -1,0 +1,87 @@
+# ============================================================
+# Kubernetes 组件层告警规则（apiserver / scheduler / controller-manager
+# / kubelet / etcd），指标来自第六章配置的认证采集
+# ============================================================
+groups:
+  - name: k8s-component-rules
+    rules:
+
+      # ---- P1：kube-apiserver 不可达 ----
+      - alert: KubeAPIServerDown
+        expr: up{job="kube-apiserver"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "master 节点 {{ $labels.node }} 的 kube-apiserver 指标不可达"
+          description: "{{ $labels.instance }} 采集失败，可能是 apiserver 异常、证书问题或节点故障；若三台全部触发，集群 API 已不可用。"
+
+      # ---- P1：etcd 不可达 ----
+      - alert: EtcdDown
+        expr: up{job="etcd"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "master 节点 {{ $labels.node }} 的 etcd 指标不可达"
+          description: "etcd 是集群数据核心，单节点失联需立即排查；三节点中两台失联时集群将不可写。"
+
+      # ---- P1：etcd 无 Leader ----
+      - alert: EtcdNoLeader
+        expr: etcd_server_has_leader == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "etcd 节点 {{ $labels.node }} 无 Leader"
+          description: "etcd 集群失去 Leader，写入将阻塞。请在 master 上执行 etcdctl endpoint status 检查成员状态。"
+
+      # ---- P2：etcd WAL fsync 变慢 ----
+      - alert: EtcdHighFsyncDuration
+        expr: histogram_quantile(0.99, rate(etcd_disk_wal_fsync_duration_seconds_bucket[5m])) > 0.5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "etcd 节点 {{ $labels.node }} WAL fsync P99 超过 500ms"
+          description: "fsync 延迟高意味着磁盘 I/O 拥塞，可能拖慢整个控制面，请检查磁盘性能。"
+
+      # ---- P2：kubelet 不可达 ----
+      - alert: KubeletDown
+        expr: up{job="kubelet"} == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "节点 {{ $labels.node }} 的 kubelet 指标不可达"
+          description: "kubelet 异常会影响 Pod 生命周期管理；若同时收到 NodeDown，说明是节点级故障（本告警会被抑制策略压制）。"
+
+      # ---- P2：kube-scheduler 不可达 ----
+      - alert: KubeSchedulerDown
+        expr: up{job="kube-scheduler"} == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "master 节点 {{ $labels.node }} 的 kube-scheduler 不可达"
+          description: "新创建的 Pod 将无法调度，请检查组件进程与日志。"
+
+      # ---- P2：kube-controller-manager 不可达 ----
+      - alert: KubeControllerManagerDown
+        expr: up{job="kube-controller-manager"} == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "master 节点 {{ $labels.node }} 的 kube-controller-manager 不可达"
+          description: "控制器循环停止，副本维持、节点心跳标记等逻辑将受影响。"
+
+      # ---- P2：apiserver 5xx 错误率过高 ----
+      - alert: KubeAPIServerErrorRateHigh
+        expr: sum(rate(apiserver_request_total{code=~"5.."}[5m])) / sum(rate(apiserver_request_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "kube-apiserver 5xx 错误比例超过 5%"
+          description: "最近 5 分钟 5xx 占比 {{ $value | humanizePercentage }}，请检查 apiserver 日志。"

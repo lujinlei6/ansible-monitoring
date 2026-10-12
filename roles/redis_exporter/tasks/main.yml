@@ -1,0 +1,29 @@
+# ============================================================
+# 文件：roles/redis_exporter/tasks/main.yml
+# ============================================================
+---
+- name: 确保 exporter 命名空间存在（幂等）
+  ansible.builtin.shell: |
+    kubectl create namespace {{ exporter_namespace }} --dry-run=client -o yaml | kubectl apply -f -
+  changed_when: false
+
+- name: 渲染 redis_exporter 资源清单
+  ansible.builtin.template:
+    src: redis-exporter.yaml.j2
+    dest: /tmp/redis-exporter.yaml
+    mode: "0600"
+
+- name: 应用资源清单（kubectl apply）
+  ansible.builtin.command: kubectl apply -f /tmp/redis-exporter.yaml
+  register: redis_apply
+  changed_when: "'configured' in redis_apply.stdout or 'created' in redis_apply.stdout"
+
+- name: 等待 Deployment 就绪
+  ansible.builtin.command: >
+    kubectl -n {{ exporter_namespace }} rollout status deployment/redis-exporter --timeout=120s
+  changed_when: false
+
+- name: 清理临时清单文件
+  ansible.builtin.file:
+    path: /tmp/redis-exporter.yaml
+    state: absent

@@ -1,0 +1,66 @@
+# ============================================================
+# 由 Ansible 渲染并 kubectl apply
+# 组件：redis_exporter v1.93.0（Secret + Deployment + NodePort Service）
+# ============================================================
+apiVersion: v1
+kind: Secret
+metadata:
+  name: redis-exporter-secret
+  namespace: {{ exporter_namespace }}
+type: Opaque
+stringData:
+  REDIS_PASSWORD: "{{ redis_password }}"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-exporter
+  namespace: {{ exporter_namespace }}
+  labels:
+    app: redis-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis-exporter
+  template:
+    metadata:
+      labels:
+        app: redis-exporter
+    spec:
+      containers:
+        - name: redis-exporter
+          image: harbor.lab/monitoring/redis_exporter:v{{ redis_exporter_version }}
+          env:
+            - name: REDIS_ADDR
+              value: "redis://{{ redis_host }}:{{ redis_port }}"
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis-exporter-secret
+                  key: REDIS_PASSWORD
+          ports:
+            - name: metrics
+              containerPort: 9121
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-exporter
+  namespace: {{ exporter_namespace }}
+spec:
+  type: NodePort
+  selector:
+    app: redis-exporter
+  ports:
+    - name: metrics
+      port: 9121
+      targetPort: 9121
+      nodePort: {{ redis_exporter_nodeport }}

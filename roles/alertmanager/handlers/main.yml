@@ -1,0 +1,10 @@
+# ============================================================
+# 文件：roles/alertmanager/handlers/main.yml
+# 说明：Alertmanager 不支持配置热加载，配置变更后重启生效
+# ============================================================
+---
+- name: restart alertmanager
+  ansible.builtin.systemd:
+    name: alertmanager
+    state: restarted
+    daemon_reload: true

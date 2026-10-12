@@ -1,0 +1,48 @@
+{{/* 自定义邮件模板：触发/恢复双表格，由 alertmanager.yml 的 html 字段引用 */}}
+{{ define "email.custom.html" }}
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="font-family:'Microsoft YaHei',Arial,sans-serif;">
+  {{ if gt (len .Alerts.Firing) 0 }}
+  <h3 style="color:#d9534f;margin-bottom:8px;">【触发告警】共 {{ len .Alerts.Firing }} 条</h3>
+  <table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-size:13px;">
+    <tr style="background:#f2f2f2;">
+      <th>级别</th><th>告警名</th><th>节点</th><th>开始时间</th><th>描述</th>
+    </tr>
+    {{ range .Alerts.Firing }}
+    <tr>
+      <td>{{ .Labels.severity }}</td>
+      <td>{{ .Labels.alertname }}</td>
+      <td>{{ .Labels.node }}</td>
+      <td>{{ .StartsAt.Format "2006-01-02 15:04:05" }}</td>
+      <td>{{ .Annotations.description }}</td>
+    </tr>
+    {{ end }}
+  </table>
+  {{ end }}
+
+  {{ if gt (len .Alerts.Resolved) 0 }}
+  <h3 style="color:#5cb85c;margin:16px 0 8px;">【恢复通知】共 {{ len .Alerts.Resolved }} 条</h3>
+  <table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;font-size:13px;">
+    <tr style="background:#f2f2f2;">
+      <th>级别</th><th>告警名</th><th>节点</th><th>恢复时间</th>
+    </tr>
+    {{ range .Alerts.Resolved }}
+    <tr>
+      <td>{{ .Labels.severity }}</td>
+      <td>{{ .Labels.alertname }}</td>
+      <td>{{ .Labels.node }}</td>
+      <td>{{ .EndsAt.Format "2006-01-02 15:04:05" }}</td>
+    </tr>
+    {{ end }}
+  </table>
+  {{ end }}
+
+  <hr style="margin:16px 0;">
+  <p style="color:#888;font-size:12px;">
+    来自 k8s-mall 监控告警体系 | 收到此邮件请在 Grafana / Prometheus 确认告警详情
+  </p>
+</body>
+</html>
+{{ end }}

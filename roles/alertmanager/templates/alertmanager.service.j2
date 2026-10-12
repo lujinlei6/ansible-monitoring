@@ -1,0 +1,20 @@
+# 由 Ansible 模板分发：roles/alertmanager/templates/alertmanager.service.j2
+[Unit]
+Description=Alertmanager
+Documentation=https://prometheus.io/docs/alerting/latest/alertmanager/
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=prometheus
+Group=prometheus
+ExecStart=/usr/local/bin/alertmanager \
+  --config.file=/etc/alertmanager/alertmanager.yml \
+  --storage.path=/var/lib/alertmanager \
+  --web.listen-address=:9093
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target

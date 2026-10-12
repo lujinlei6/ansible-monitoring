@@ -1,0 +1,78 @@
+# ============================================================
+# Alertmanager 主配置（Ansible 渲染 → /etc/alertmanager/alertmanager.yml）
+# 处理顺序：去重 → 分组 → 抑制 → 静默 → 路由 → 通知
+# 注意 1：文件中 {% raw %}{{ ... }}{% endraw %} 为 Go 模板语法，Ansible 渲染时原样保留
+# 注意 2：Ansible 默认开启 trim_blocks 会删除块标签后的换行，html: 行与其后
+#         headers: 行之间必须保留一个空行，否则渲染出的 YAML 会被拼行报错
+# ============================================================
+
+# ---------- 全局 ----------
+global:
+  resolve_timeout: 5m            # 5 分钟收不到告警更新则标记为已恢复
+  # ---------- 邮件发送参数（QQ 邮箱 SMTP）----------
+  smtp_smarthost: '{{ smtp_smarthost }}'
+  smtp_from: '{{ smtp_from }}'
+  smtp_auth_username: '{{ smtp_from }}'
+  smtp_auth_password: '{{ smtp_auth_password }}'   # QQ 邮箱"SMTP 授权码"，不是 QQ 密码
+  smtp_require_tls: false                          # 465 端口为隐式 SSL，无需 STARTTLS
+
+# ---------- 自定义邮件模板 ----------
+templates:
+  - '/etc/alertmanager/templates/*.tmpl'
+
+# ---------- 路由：按 severity 分级送达 ----------
+route:
+  receiver: 'email-warning'                      # 默认接收器
+  group_by: ['alertname', 'node']                # 同告警+同节点合并为一封
+  group_wait: 30s                                # 新告警组等待 30s 聚合后发送
+  group_interval: 5m                             # 同组追加告警的发送间隔
+  repeat_interval: 4h                            # 未恢复告警 4 小时提醒一次（降噪关键）
+  routes:
+    # P1 严重：10 秒聚合、1 小时重发（紧急事件快速反复提醒）
+    - matchers:
+        - severity="critical"
+      receiver: 'email-critical'
+      group_wait: 10s
+      repeat_interval: 1h
+    # P2 警告：走默认（30s 聚合、4 小时重发）
+    - matchers:
+        - severity="warning"
+      receiver: 'email-warning'
+
+# ---------- 接收器 ----------
+receivers:
+  - name: 'email-critical'
+    email_configs:
+      - to: '{{ alert_email_to }}'
+        send_resolved: true                      # 恢复时再发一封恢复邮件
+        html: {% raw %}'{{ template "email.custom.html" . }}'{% endraw %}
+
+        headers:
+          Subject: {% raw %}'[P1严重][{{ .Status | toUpper }}] {{ .CommonLabels.alertname }} @ {{ .CommonLabels.node }}'{% endraw %}
+
+  - name: 'email-warning'
+    email_configs:
+      - to: '{{ alert_email_to }}'
+        send_resolved: true
+        html: {% raw %}'{{ template "email.custom.html" . }}'{% endraw %}
+
+        headers:
+          Subject: {% raw %}'[P2警告][{{ .Status | toUpper }}] {{ .CommonLabels.alertname }} @ {{ .CommonLabels.node }}'{% endraw %}
+
+# ---------- 抑制规则（告警收敛核心）----------
+inhibit_rules:
+  # 规则一：同一节点出现 critical 告警时，压制该节点上的 warning 告警
+  # 场景：node1 宕机(NodeDown/P1) 时，不再重复轰炸 CPU/内存/负载等 CPU 派生警告
+  - source_matchers:
+      - severity="critical"
+    target_matchers:
+      - severity="warning"
+    equal: ['node']
+
+  # 规则二：节点宕机时，压制该节点上"派生出来的"组件不可达告警（防告警风暴）
+  # 场景：master 宕机时，不再单独报 KubeletDown/scheduler 不可达等 5 类从属告警
+  - source_matchers:
+      - alertname="NodeDown"
+    target_matchers:
+      - alertname=~"KubeletDown|KubeAPIServerDown|KubeSchedulerDown|KubeControllerManagerDown|EtcdDown"
+    equal: ['node']

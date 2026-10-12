@@ -1,0 +1,6 @@
+# ============================================================
+# prometheus 角色默认变量
+# ============================================================
+prometheus_package: "/tmp/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
+prometheus_dir:     "/tmp/prometheus-{{ prometheus_version }}.linux-amd64"
+prometheus_retention: "15d"     # TSDB 数据保留时间

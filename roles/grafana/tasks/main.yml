@@ -1,0 +1,47 @@
+# ============================================================
+# 文件：roles/grafana/tasks/main.yml
+# ============================================================
+---
+- name: 配置 Grafana Yum 源
+  ansible.builtin.template:
+    src: grafana.repo.j2
+    dest: /etc/yum.repos.d/grafana.repo
+    mode: "0644"
+
+- name: 安装 Grafana
+  ansible.builtin.dnf:
+    name: grafana
+    state: present
+
+- name: 创建看板 JSON 存放目录
+  ansible.builtin.file:
+    path: /var/lib/grafana/dashboards
+    state: directory
+    owner: grafana
+    group: grafana
+    mode: "0755"
+
+- name: 分发数据源配置（Provisioning）
+  ansible.builtin.template:
+    src: datasource-prometheus.yml.j2
+    dest: /etc/grafana/provisioning/datasources/prometheus.yml
+    owner: root
+    group: grafana
+    mode: "0640"
+  notify: restart grafana
+
+- name: 分发看板供应商配置
+  ansible.builtin.template:
+    src: dashboards-provider.yml.j2
+    dest: /etc/grafana/provisioning/dashboards/default.yml
+    owner: root
+    group: grafana
+    mode: "0640"
+  notify: restart grafana
+
+- name: 启动 Grafana 并设置开机自启
+  ansible.builtin.systemd:
+    name: grafana-server
+    state: started
+    enabled: true
+    daemon_reload: true

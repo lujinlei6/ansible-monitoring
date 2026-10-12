@@ -1,0 +1,77 @@
+# ============================================================
+# 主机层告警规则（node_exporter 指标）
+# 分级：critical = P1（立即处理）；warning = P2（当天处理）
+# ============================================================
+groups:
+  - name: node-rules
+    rules:
+
+      # ---- P1：节点失联 ----
+      - alert: NodeDown
+        expr: up{job="node_exporter"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "节点 {{ $labels.node }} 失联（node_exporter 不可达）"
+          description: "目标 {{ $labels.instance }} 已超过 1 分钟无法采集。可能原因：主机宕机/重启、网络中断、node_exporter 停止。"
+
+      # ---- P2：CPU 使用率持续过高 ----
+      - alert: NodeCpuHigh
+        expr: 100 - (avg by (node) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "节点 {{ $labels.node }} CPU 使用率持续高于 85%"
+          description: "最近 10 分钟 CPU 平均使用率 {{ printf \"%.1f\" $value }}%，请检查异常进程或负载突增。"
+
+      # ---- P2：内存使用率过高 ----
+      - alert: NodeMemoryHigh
+        expr: 100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "节点 {{ $labels.node }} 内存使用率高于 85%"
+          description: "当前内存使用率 {{ printf \"%.1f\" $value }}%，请关注 OOM 风险。"
+
+      # ---- P2：磁盘使用率过高 ----
+      - alert: NodeDiskHigh
+        expr: 100 * (1 - node_filesystem_avail_bytes{mountpoint="/",fstype!~"tmpfs|overlay|squashfs|iso9660"} / node_filesystem_size_bytes{mountpoint="/",fstype!~"tmpfs|overlay|squashfs|iso9660"}) > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "节点 {{ $labels.node }} 根分区使用率高于 85%"
+          description: "当前使用率 {{ printf \"%.1f\" $value }}%，请及时清理日志或扩容。"
+
+      # ---- P1：磁盘 4 小时内将写满（预测式告警）----
+      - alert: NodeDiskWillFillIn4Hours
+        expr: predict_linear(node_filesystem_avail_bytes{mountpoint="/",fstype!~"tmpfs|overlay|squashfs|iso9660"}[1h], 4 * 3600) < 0
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "节点 {{ $labels.node }} 根分区预计 4 小时内写满"
+          description: "按最近 1 小时的增长趋势预测，4 小时后可用空间将耗尽，请立即处理。"
+
+      # ---- P2：系统负载过高（负载 > 2 倍核数）----
+      - alert: NodeLoadHigh
+        expr: node_load5 / count by (node) (node_cpu_seconds_total{mode="idle"}) > 2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "节点 {{ $labels.node }} 5 分钟负载超过核数的 2 倍"
+          description: "负载/核数比值 {{ printf \"%.2f\" $value }}，系统可能出现严重排队。"
+
+      # ---- P2：发生 OOM Kill ----
+      - alert: NodeOOMKill
+        expr: increase(node_vmstat_oom_kill[10m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "节点 {{ $labels.node }} 最近 10 分钟发生 OOM Kill"
+          description: "共 {{ $value }} 次内存溢出杀进程，请检查内存使用大户。"

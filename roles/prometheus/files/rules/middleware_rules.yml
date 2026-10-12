@@ -1,0 +1,76 @@
+# ============================================================
+# 中间件层告警规则（MySQL / Redis）
+# ============================================================
+groups:
+  - name: middleware-rules
+    rules:
+
+      # ---- P1：MySQL 不可达 ----
+      - alert: MySQLDown
+        expr: up{job="mysqld_exporter"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "MySQL 监控目标不可达"
+          description: "{{ $labels.instance }} 采集失败：MySQL 宕机或 mysqld_exporter 异常，业务将直接受影响。"
+
+      # ---- P2：MySQL 连接数使用率过高 ----
+      - alert: MySQLConnectionsHigh
+        expr: mysql_global_status_threads_connected / mysql_global_variables_max_connections > 0.8
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "MySQL 连接数使用率超过 80%"
+          description: "当前使用率 {{ $value | humanizePercentage }}，接近 max_connections 上限，新连接可能被拒绝。"
+
+      # ---- P2：MySQL 异常中断连接增多 ----
+      - alert: MySQLAbortedConnects
+        expr: increase(mysql_global_status_aborted_connects[10m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "MySQL 最近 10 分钟异常中断连接超过 10 次"
+          description: "可能存在认证失败、网络抖动或连接池异常，请结合错误日志排查。"
+
+      # ---- P2：MySQL 慢查询突增 ----
+      - alert: MySQLSlowQueries
+        expr: rate(mysql_global_status_slow_queries[10m]) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "MySQL 慢查询速率异常"
+          description: "慢查询持续产生（约 {{ printf \"%.2f\" $value }} 次/秒），建议检查 slow log 与索引。（MySQL 8.4+ 中该状态变量已移除，如版本较新可删掉本规则）"
+
+      # ---- P1：Redis 不可达 ----
+      - alert: RedisDown
+        expr: up{job="redis_exporter"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis 监控目标不可达"
+          description: "{{ $labels.instance }} 采集失败：Redis 宕机或 exporter 异常，缓存层故障将影响全部业务。"
+
+      # ---- P2：Redis 内存使用率过高（需已配置 maxmemory）----
+      - alert: RedisMemoryHigh
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.85 and redis_memory_max_bytes > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Redis 内存使用率超过 85%"
+          description: "当前使用率 {{ $value | humanizePercentage }}，接近 maxmemory，可能触发淘汰甚至写入失败。"
+
+      # ---- P2：Redis 拒绝连接 ----
+      - alert: RedisRejectedConnections
+        expr: increase(redis_rejected_connections_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Redis 出现连接被拒绝"
+          description: "5 分钟内新增 {{ $value }} 次拒绝连接，请检查 maxclients 与连接泄漏。"

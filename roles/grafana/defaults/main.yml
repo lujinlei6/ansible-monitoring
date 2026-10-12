@@ -1,0 +1,5 @@
+# ============================================================
+# grafana 角色默认变量
+# ============================================================
+# Grafana 数据源指向本机 Prometheus（与 datasource-prometheus.yml.j2 一致）
+prometheus_datasource_url: "http://localhost:9090"

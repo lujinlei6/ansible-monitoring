@@ -1,0 +1,231 @@
+# ============================================================
+# 文件：site.yml —— 监控体系部署总入口
+#
+# 全量部署：   ansible-playbook site.yml
+# 分阶段部署： ansible-playbook site.yml --tags <标签>
+#   标签：node_exporter | mysqld_exporter | redis_exporter |
+#         kube_state_metrics | prometheus | alertmanager | grafana
+# ============================================================
+---
+- name: "Play0 | 在 ops(本机) 预下载监控二进制到本地暂存目录"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tags: [prepack]
+  tasks:
+    - name: 创建本地暂存目录
+      ansible.builtin.file:
+        path: "{{ local_package_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: 定义二进制安装包清单
+      ansible.builtin.set_fact:
+        mono_packages:
+          - name: node_exporter
+            url: "{{ node_exporter_url }}"
+            file: "node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz"
+          - name: prometheus
+            url: "{{ prometheus_url }}"
+            file: "prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
+          - name: alertmanager
+            url: "{{ alertmanager_url }}"
+            file: "alertmanager-{{ alertmanager_version }}.linux-amd64.tar.gz"
+
+    - name: 检查本地是否已有安装包
+      ansible.builtin.stat:
+        path: "{{ local_package_dir }}/{{ item.file }}"
+      loop: "{{ mono_packages }}"
+      register: mono_pkg_stat
+
+    - name: 下载缺失的安装包到 ops 本机
+      ansible.builtin.get_url:
+        url: "{{ item.item.url }}"
+        dest: "{{ local_package_dir }}/{{ item.item.file }}"
+        mode: "0644"
+        timeout: 600
+      loop: "{{ mono_pkg_stat.results }}"
+      when: not item.stat.exists
+      loop_control:
+        label: "{{ item.item.name }}"
+
+- name: 基础配置
+  hosts: monitor
+  gather_facts: true
+  roles:
+    - role: common
+
+
+- name: "Play1 | 全部主机安装 Node Exporter（主机指标采集器）"
+  hosts: all_nodes
+  gather_facts: true
+  roles:
+    - role: node_exporter
+      tags: [node_exporter]
+
+- name: "Play2 | 在 K8s 集群内部署监控 Exporter（MySQL / Redis / kube-state-metrics）"
+  hosts: "{{ groups['k8s_masters'][0] }}"
+  gather_facts: false
+  roles:
+    - role: mysqld_exporter
+      tags: [mysqld_exporter]
+    - role: redis_exporter
+      tags: [redis_exporter]
+    - role: kube_state_metrics
+      tags: [kube_state_metrics]
+
+- name: "Play3-prep1 | 生成 Prometheus 采集 K8s 认证材料（SA/CRB/Token），暂存到 ops"
+  hosts: "{{ groups['k8s_masters'][0] }}"
+  gather_facts: false
+  become: true
+  vars:
+    auth_namespace: monitoring
+    auth_sa: prometheus-in-k8s
+    auth_staging: "{{ local_package_dir }}/k8s-auth"
+  tasks:
+    - name: 创建 ops 侧认证暂存目录
+      ansible.builtin.file:
+        path: "{{ auth_staging }}"
+        state: directory
+        mode: "0755"
+      delegate_to: localhost
+
+    - name: 下发 Prometheus RBAC 清单（SA + ClusterRole + ClusterRoleBinding）
+      ansible.builtin.copy:
+        dest: /tmp/prom-rbac.yaml
+        content: |
+          apiVersion: v1
+          kind: ServiceAccount
+          metadata:
+            name: {{ auth_sa }}
+            namespace: {{ auth_namespace }}
+          ---
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRole
+          metadata:
+            name: prometheus
+          rules:
+            - apiGroups: [""]
+              resources: ["nodes", "nodes/metrics", "services", "endpoints", "pods", "namespaces"]
+              verbs: ["get", "list", "watch"]
+            - apiGroups: ["networking.k8s.io", "extensions"]
+              resources: ["ingresses"]
+              verbs: ["get", "list", "watch"]
+            - nonResourceURLs: ["/metrics", "/api", "/apis"]
+              verbs: ["get"]
+          ---
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRoleBinding
+          metadata:
+            name: prometheus
+          roleRef:
+            apiGroup: rbac.authorization.k8s.io
+            kind: ClusterRole
+            name: prometheus
+          subjects:
+            - kind: ServiceAccount
+              name: {{ auth_sa }}
+              namespace: {{ auth_namespace }}
+
+    - name: 应用 RBAC
+      ansible.builtin.command: kubectl apply -f /tmp/prom-rbac.yaml
+      changed_when: false
+
+    - name: 下发 SA 长期 token secret 清单
+      ansible.builtin.copy:
+        dest: /tmp/prom-token-secret.yaml
+        content: |
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: prometheus-sa-token
+            namespace: {{ auth_namespace }}
+            annotations:
+              kubernetes.io/service-account.name: {{ auth_sa }}
+          type: kubernetes.io/service-account-token
+
+    - name: 应用 token secret
+      ansible.builtin.command: kubectl apply -f /tmp/prom-token-secret.yaml
+      changed_when: false
+
+    - name: 读取 SA token（base64）
+      ansible.builtin.command: kubectl -n {{ auth_namespace }} get secret prometheus-sa-token -o jsonpath='{.data.token}'
+      register: prom_token_b64
+      changed_when: false
+
+    - name: 解码 token 并暂存到 ops
+      ansible.builtin.shell: echo "{{ prom_token_b64.stdout }}" | base64 -d > {{ auth_staging }}/k8s.token
+      changed_when: false
+      delegate_to: localhost
+
+    - name: 从 master 拉取 K8s CA 与 etcd 客户端证书到 ops
+      ansible.builtin.fetch:
+        src: "{{ item.src }}"
+        dest: "{{ auth_staging }}/{{ item.flat }}"
+        flat: true
+      loop:
+        - { src: /etc/kubernetes/pki/ca.crt, flat: k8s-ca.crt }
+        - { src: /etc/kubernetes/pki/etcd/ca.crt, flat: etcd-ca.crt }
+        - { src: /etc/kubernetes/pki/etcd/healthcheck-client.crt, flat: etcd-client.crt }
+        - { src: /etc/kubernetes/pki/etcd/healthcheck-client.key, flat: etcd-client.key }
+
+    - name: 清理临时清单
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop: [/tmp/prom-rbac.yaml, /tmp/prom-token-secret.yaml]
+
+- name: "Play3-prep2 | 把 K8s 认证材料下发到 monitor 节点"
+  hosts: monitor
+  gather_facts: false
+  become: true
+  vars:
+    auth_staging: "{{ local_package_dir }}/k8s-auth"
+  tasks:
+    - name: 创建目标目录
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - /etc/prometheus/token
+        - /etc/prometheus/certs
+        - /etc/prometheus/certs/etcd
+
+    - name: 下发 K8s token
+      ansible.builtin.copy:
+        src: "{{ auth_staging }}/k8s.token"
+        dest: /etc/prometheus/token/k8s.token
+        mode: "0640"
+
+    - name: 下发 K8s CA 与 etcd 客户端证书
+      ansible.builtin.copy:
+        src: "{{ auth_staging }}/{{ item.src }}"
+        dest: "/etc/prometheus/certs/{{ item.dest }}"
+        mode: "0640"
+      loop:
+        - { src: k8s-ca.crt, dest: k8s-ca.crt }
+        - { src: etcd-ca.crt, dest: etcd/ca.crt }
+        - { src: etcd-client.crt, dest: etcd/client.crt }
+        - { src: etcd-client.key, dest: etcd/client.key }
+
+- name: "Play3 | 监控机部署 Prometheus"
+  hosts: monitor
+  gather_facts: true
+  roles:
+    - role: prometheus
+      tags: [prometheus]
+
+- name: "Play4 | 监控机部署 Alertmanager"
+  hosts: monitor
+  gather_facts: true
+  roles:
+    - role: alertmanager
+      tags: [alertmanager]
+
+- name: "Play5 | 监控机部署 Grafana"
+  hosts: monitor
+  gather_facts: true
+  roles:
+    - role: grafana
+      tags: [grafana]

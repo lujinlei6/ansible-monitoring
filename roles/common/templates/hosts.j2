@@ -1,0 +1,10 @@
+127.0.0.1   localhost localhost.localdomain
+::1         localhost localhost.localdomain
+
+# ===== 集群 VIP（第 2.5 节）=====
+{{ k8s_api_vip }}   k8s-api.lab
+
+# ===== 9 台节点（由 inventory 自动生成）=====
+{% for h in groups['all'] | sort %}
+{{ hostvars[h].ansible_host | default(h) }}   {{ h }}
+{% endfor %}

@@ -1,0 +1,144 @@
+# ============================================================
+# 由 Ansible 渲染并 kubectl apply
+# 组件：kube-state-metrics v{{ kube_state_metrics_version }}
+#       （ServiceAccount + ClusterRole + Deployment + NodePort Service）
+# 说明：kube-state-metrics 不直接采集指标，而是通过 list/watch 各类 K8s 对象，
+#       把对象"状态"转成指标暴露（kube_pod_status_phase、kube_deployment_* 等），
+#       是"Pod 为什么没起来 / 副本数够不够 / PVC 绑没绑"这类问题的数据来源。
+# 注意：镜像来自 registry.k8s.io，节点无法直连时需先转发到内部 Harbor。
+# ============================================================
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kube-state-metrics
+  namespace: {{ exporter_namespace }}
+  labels:
+    app: kube-state-metrics
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kube-state-metrics
+  labels:
+    app: kube-state-metrics
+rules:
+  # 核心组对象（Pod/Node/Service/PVC/PV/Namespace 等）
+  - apiGroups: [""]
+    resources:
+      - nodes
+      - pods
+      - services
+      - endpoints
+      - namespaces
+      - persistentvolumeclaims
+      - persistentvolumes
+      - replicationcontrollers
+      - limitranges
+      - resourcequotas
+    verbs: ["list", "watch"]
+  # 工作负载
+  - apiGroups: ["apps"]
+    resources:
+      - deployments
+      - replicasets
+      - statefulsets
+      - daemonsets
+    verbs: ["list", "watch"]
+  # 任务
+  - apiGroups: ["batch"]
+    resources:
+      - jobs
+      - cronjobs
+    verbs: ["list", "watch"]
+  # 伸缩与中断预算
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["list", "watch"]
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["list", "watch"]
+  # 存储与证书
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses", "volumeattachments"]
+    verbs: ["list", "watch"]
+  - apiGroups: ["certificates.k8s.io"]
+    resources: ["certificatesigningrequests"]
+    verbs: ["list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kube-state-metrics
+  labels:
+    app: kube-state-metrics
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kube-state-metrics
+subjects:
+  - kind: ServiceAccount
+    name: kube-state-metrics
+    namespace: {{ exporter_namespace }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kube-state-metrics
+  namespace: {{ exporter_namespace }}
+  labels:
+    app: kube-state-metrics
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kube-state-metrics
+  template:
+    metadata:
+      labels:
+        app: kube-state-metrics
+    spec:
+      serviceAccountName: kube-state-metrics
+      containers:
+        - name: kube-state-metrics
+          image: harbor.lab/monitoring/kube-state-metrics:v{{ kube_state_metrics_version }}
+          ports:
+            - name: http-metrics        # 指标端口（Prometheus 抓这个）
+              containerPort: 8080
+            - name: telemetry           # 自身健康/性能指标端口
+              containerPort: 8081
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: http-metrics
+            initialDelaySeconds: 5
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: telemetry
+            initialDelaySeconds: 5
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: 10m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kube-state-metrics
+  namespace: {{ exporter_namespace }}
+  labels:
+    app: kube-state-metrics
+spec:
+  type: NodePort
+  selector:
+    app: kube-state-metrics
+  ports:
+    - name: http-metrics
+      port: 8080
+      targetPort: http-metrics
+      nodePort: {{ kube_state_metrics_nodeport }}

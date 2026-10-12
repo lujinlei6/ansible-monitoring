@@ -1,0 +1,31 @@
+# ============================================================
+# 文件：roles/kube_state_metrics/tasks/main.yml
+# 功能：在 K8s 集群内部署 kube-state-metrics（由 site.yml 的 Play2 调用，
+#       执行节点为第一台 master，因为要用该节点的 kubectl）
+# ============================================================
+---
+- name: 确保 exporter 命名空间存在（幂等）
+  ansible.builtin.shell: |
+    kubectl create namespace {{ exporter_namespace }} --dry-run=client -o yaml | kubectl apply -f -
+  changed_when: false
+
+- name: 渲染 kube-state-metrics 资源清单
+  ansible.builtin.template:
+    src: kube-state-metrics.yaml.j2
+    dest: /tmp/kube-state-metrics.yaml
+    mode: "0644"
+
+- name: 应用资源清单（kubectl apply）
+  ansible.builtin.command: kubectl apply -f /tmp/kube-state-metrics.yaml
+  register: ksm_apply
+  changed_when: "'configured' in ksm_apply.stdout or 'created' in ksm_apply.stdout"
+
+- name: 等待 Deployment 就绪
+  ansible.builtin.command: >
+    kubectl -n {{ exporter_namespace }} rollout status deployment/kube-state-metrics --timeout=180s
+  changed_when: false
+
+- name: 清理临时清单文件
+  ansible.builtin.file:
+    path: /tmp/kube-state-metrics.yaml
+    state: absent

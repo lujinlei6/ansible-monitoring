@@ -1,0 +1,24 @@
+# 由 Ansible 模板分发：roles/prometheus/templates/prometheus.service.j2
+[Unit]
+Description=Prometheus Server
+Documentation=https://prometheus.io/docs/
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=prometheus
+Group=prometheus
+ExecStart=/usr/local/bin/prometheus \
+  --config.file=/etc/prometheus/prometheus.yml \
+  --storage.tsdb.path=/var/lib/prometheus \
+  --storage.tsdb.retention.time={{ prometheus_retention }} \
+  --web.listen-address=:9090 \
+  --web.enable-lifecycle
+ExecReload=/usr/bin/curl -s -X POST http://localhost:9090/-/reload
+Restart=on-failure
+RestartSec=5s
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

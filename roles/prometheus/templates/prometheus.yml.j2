@@ -1,0 +1,186 @@
+# ============================================================
+# Prometheus 主配置（由 Ansible 模板生成到 /etc/prometheus/prometheus.yml）
+# 11 个采集任务：
+#   1 prometheus 自身 | 2 node_exporter(7台) | 3 mysqld | 4 redis
+#   5 apiserver | 6 scheduler | 7 controller-manager | 8 kubelet | 9 etcd
+#   10 kubelet 的 cAdvisor（容器资源）| 11 kube-state-metrics（对象状态）
+# ============================================================
+global:
+  scrape_interval: 15s            # 采集间隔
+  evaluation_interval: 15s        # 告警规则求值间隔
+  external_labels:
+    cluster: "k8s-mall"           # 集群标识（多集群/多 Prometheus 场景使用）
+
+# ---------- 告警推送到 Alertmanager（第八章部署，IP 固定为监控机自身）----------
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["{{ monitor_ip }}:9093"]
+
+# ---------- 告警规则文件（通配加载 rules 目录）----------
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+# ---------- 采集任务 ----------
+scrape_configs:
+
+  # ===== 1. Prometheus 自身 =====
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # ===== 2. 主机指标：node_exporter（6 个集群节点 + 监控机）=====
+  # relabel：把 instance（master:9100）的主机部分提取为 node 标签，供告警分组/抑制使用
+  - job_name: node_exporter
+    relabel_configs:
+      - source_labels: [__address__]
+        regex: "(.*):9100"
+        target_label: node
+        replacement: "$1"
+    static_configs:
+      - targets:
+{% for host in groups['k8s_masters'] %}
+          - "{{ host }}:9100"
+{% endfor %}
+        labels:
+          role: master
+      - targets:
+{% for host in groups['k8s_workers'] %}
+          - "{{ host }}:9100"
+{% endfor %}
+        labels:
+          role: worker
+      - targets:
+{% for host in groups['monitor'] %}
+          - "{{ host }}:9100"
+{% endfor %}
+        labels:
+          role: monitor
+
+  # ===== 3. MySQL（集群内 mysqld_exporter，NodePort 暴露）=====
+  - job_name: mysqld_exporter
+    static_configs:
+      - targets: ["{{ middleware_target_ip }}:{{ mysqld_exporter_nodeport }}"]
+
+  # ===== 4. Redis（集群内 redis_exporter，NodePort 暴露）=====
+  - job_name: redis_exporter
+    static_configs:
+      - targets: ["{{ middleware_target_ip }}:{{ redis_exporter_nodeport }}"]
+
+  # ===== 5. kube-apiserver（3 台 master，https + token）=====
+  - job_name: kube-apiserver
+    scheme: https
+    tls_config:
+      ca_file: /etc/prometheus/certs/k8s-ca.crt
+    bearer_token_file: /etc/prometheus/token/k8s.token
+    relabel_configs:
+      - source_labels: [__address__]
+        regex: "(.*):6443"
+        target_label: node
+        replacement: "$1"
+    static_configs:
+      - targets:
+{% for host in groups['k8s_masters'] %}
+          - "{{ host }}:6443"
+{% endfor %}
+
+  # ===== 6. kube-scheduler（3 台 master）=====
+  - job_name: kube-scheduler
+    scheme: https
+    tls_config:
+      ca_file: /etc/prometheus/certs/k8s-ca.crt
+    bearer_token_file: /etc/prometheus/token/k8s.token
+    relabel_configs:
+      - source_labels: [__address__]
+        regex: "(.*):10259"
+        target_label: node
+        replacement: "$1"
+    static_configs:
+      - targets:
+{% for host in groups['k8s_masters'] %}
+          - "{{ host }}:10259"
+{% endfor %}
+
+  # ===== 7. kube-controller-manager（3 台 master）=====
+  - job_name: kube-controller-manager
+    scheme: https
+    tls_config:
+      ca_file: /etc/prometheus/certs/k8s-ca.crt
+    bearer_token_file: /etc/prometheus/token/k8s.token
+    relabel_configs:
+      - source_labels: [__address__]
+        regex: "(.*):10257"
+        target_label: node
+        replacement: "$1"
+    static_configs:
+      - targets:
+{% for host in groups['k8s_masters'] %}
+          - "{{ host }}:10257"
+{% endfor %}
+
+  # ===== 8. kubelet（6 个 K8s 节点）=====
+  - job_name: kubelet
+    scheme: https
+    tls_config:
+      ca_file: /etc/prometheus/certs/k8s-ca.crt
+      insecure_skip_verify: true    # 实验环境：kubelet 自签 serving 证书直接信任
+    bearer_token_file: /etc/prometheus/token/k8s.token
+    relabel_configs:
+      - source_labels: [__address__]
+        regex: "(.*):10250"
+        target_label: node
+        replacement: "$1"
+    static_configs:
+      - targets:
+{% for host in groups['k8s_nodes'] %}
+          - "{{ host }}:10250"
+{% endfor %}
+
+  # ===== 9. etcd（3 台 master，mTLS 客户端证书）=====
+  - job_name: etcd
+    scheme: https
+    tls_config:
+      ca_file: /etc/prometheus/certs/etcd/ca.crt
+      cert_file: /etc/prometheus/certs/etcd/client.crt
+      key_file: /etc/prometheus/certs/etcd/client.key
+    relabel_configs:
+      - source_labels: [__address__]
+        regex: "(.*):2379"
+        target_label: node
+        replacement: "$1"
+    static_configs:
+      - targets:
+{% for host in groups['k8s_masters'] %}
+          - "{{ host }}:2379"
+{% endfor %}
+
+  # ===== 10. cAdvisor 容器资源（kubelet 的 /metrics/cadvisor，6 个 K8s 节点）=====
+  # 认证方式与 kubelet job 相同（nodes/metrics/cadvisor 子资源权限，见第六章）；
+  # metric_relabel 丢弃 pause 容器（container="POD"）的样本，降低无效序列基数
+  - job_name: kubelet-cadvisor
+    scheme: https
+    metrics_path: /metrics/cadvisor
+    tls_config:
+      ca_file: /etc/prometheus/certs/k8s-ca.crt
+      insecure_skip_verify: true    # 实验环境：cAdvisor 与 kubelet 同口，自签 serving 证书直接信任
+    bearer_token_file: /etc/prometheus/token/k8s.token
+    relabel_configs:
+      - source_labels: [__address__]
+        regex: "(.*):10250"
+        target_label: node
+        replacement: "$1"
+    metric_relabel_configs:
+      - source_labels: [container]
+        regex: "POD"
+        action: drop
+    static_configs:
+      - targets:
+{% for host in groups['k8s_nodes'] %}
+          - "{{ host }}:10250"
+{% endfor %}
+
+  # ===== 11. kube-state-metrics（集群内 Deployment，NodePort 暴露，对象状态指标）=====
+  # 指标前缀 kube_*：Pod phase / 容器重启 / Deployment 副本 / PVC 绑定状态等
+  - job_name: kube-state-metrics
+    static_configs:
+      - targets: ["{{ middleware_target_ip }}:{{ kube_state_metrics_nodeport }}"]

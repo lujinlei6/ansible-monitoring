@@ -1,0 +1,120 @@
+# ============================================================
+# 文件：roles/prometheus/tasks/main.yml
+# 功能：安装 Prometheus 二进制、分发配置与规则、systemd 常驻
+# 说明：K8s 认证材料属主修正采用"先 stat 再改"的稳健写法，
+#       目录缺失（第六章尚未执行）时自动跳过而不是报错。
+# ============================================================
+---
+- name: 创建 prometheus 系统用户
+  ansible.builtin.user:
+    name: prometheus
+    system: true
+    shell: /sbin/nologin
+    create_home: false
+
+- name: 创建配置/数据目录
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: prometheus
+    group: prometheus
+    mode: "0755"
+  loop:
+    - /etc/prometheus
+    - /etc/prometheus/rules
+    - /var/lib/prometheus
+
+- name: 检查 K8s 认证材料目录是否存在（第六章准备，缺失则跳过属主修正）
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - /etc/prometheus/token
+    - /etc/prometheus/certs
+  register: prom_auth_dirs
+
+- name: 修正 K8s 认证材料属主（让 prometheus 用户可读 token/证书）
+  ansible.builtin.file:
+    path: "{{ item.item }}"
+    owner: prometheus
+    group: prometheus
+    recurse: true
+  loop: "{{ prom_auth_dirs.results }}"
+  when: item.stat.exists
+
+- name: 检查 prometheus 二进制是否已安装
+  ansible.builtin.stat:
+    path: /usr/local/bin/prometheus
+  register: prom_binary
+
+- name: 从 ops 本机拷贝 Prometheus 安装包到目标机
+  ansible.builtin.copy:
+    src: "{{ local_package_dir }}/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
+    dest: "{{ prometheus_package }}"
+    mode: "0644"
+  when: not prom_binary.stat.exists
+
+- name: 解压安装包
+  ansible.builtin.unarchive:
+    src: "{{ prometheus_package }}"
+    dest: /tmp/
+    remote_src: true
+  when: not prom_binary.stat.exists
+
+- name: 安装二进制（prometheus + promtool）
+  ansible.builtin.copy:
+    src: "{{ prometheus_dir }}/{{ item }}"
+    dest: "/usr/local/bin/{{ item }}"
+    mode: "0755"
+    remote_src: true
+  loop: [prometheus, promtool]
+  when: not prom_binary.stat.exists
+
+- name: 分发主配置文件
+  ansible.builtin.template:
+    src: prometheus.yml.j2
+    dest: /etc/prometheus/prometheus.yml
+    owner: root
+    group: prometheus
+    mode: "0640"
+  notify: reload prometheus
+
+- name: 分发告警规则文件
+  ansible.builtin.copy:
+    src: rules/
+    dest: /etc/prometheus/rules/
+    owner: root
+    group: prometheus
+    mode: "0640"
+  notify: reload prometheus
+
+- name: 部署 systemd 服务
+  ansible.builtin.template:
+    src: prometheus.service.j2
+    dest: /etc/systemd/system/prometheus.service
+    mode: "0644"
+  notify: restart prometheus
+
+- name: 启动服务并设置开机自启
+  ansible.builtin.systemd:
+    name: prometheus
+    state: started
+    enabled: true
+    daemon_reload: true
+
+- name: 配置语法与规则检查（promtool）
+  ansible.builtin.command: /usr/local/bin/promtool check config /etc/prometheus/prometheus.yml
+  register: promtool_result
+  changed_when: false
+  failed_when: promtool_result.rc != 0
+
+- name: 显示检查结果
+  ansible.builtin.debug:
+    msg: "{{ promtool_result.stdout_lines }}"
+
+- name: 清理临时文件
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ prometheus_package }}"
+    - "{{ prometheus_dir }}"

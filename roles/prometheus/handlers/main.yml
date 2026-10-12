@@ -1,0 +1,16 @@
+# ============================================================
+# 文件：roles/prometheus/handlers/main.yml
+# ============================================================
+---
+- name: reload prometheus
+  ansible.builtin.uri:
+    url: http://localhost:9090/-/reload
+    method: POST
+    status_code: [200, 204]
+  listen: "reload prometheus"
+
+- name: restart prometheus
+  ansible.builtin.systemd:
+    name: prometheus
+    state: restarted
+    daemon_reload: true

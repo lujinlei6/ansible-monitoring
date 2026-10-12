@@ -1,0 +1,13 @@
+# 由 Ansible 模板分发 → /etc/yum.repos.d/grafana.repo
+# 如果 rpm.grafana.com 访问慢，把 baseurl/gpgkey 换成清华镜像：
+#   baseurl=https://mirrors.tuna.tsinghua.edu.cn/grafana/yum/rpm
+#   gpgkey=https://mirrors.tuna.tsinghua.edu.cn/grafana/yum/rpm/gpg.key
+[grafana]
+name=grafana
+baseurl=https://rpm.grafana.com
+repo_gpgcheck=1
+enabled=1
+gpgcheck=1
+gpgkey=https://rpm.grafana.com/gpg.key
+sslverify=1
+sslcacert=/etc/pki/tls/certs/ca-bundle.crt

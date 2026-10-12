@@ -1,0 +1,5 @@
+# ============================================================
+# alertmanager 角色默认变量
+# ============================================================
+alertmanager_package: "/tmp/alertmanager-{{ alertmanager_version }}.linux-amd64.tar.gz"
+alertmanager_dir:     "/tmp/alertmanager-{{ alertmanager_version }}.linux-amd64"
