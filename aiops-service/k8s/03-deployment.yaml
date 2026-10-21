@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aiops-service
+  namespace: aiops
+  labels: {app: aiops-service}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: aiops-service}
+  template:
+    metadata:
+      labels: {app: aiops-service}
+    spec:
+      serviceAccountName: aiops-sa
+      imagePullSecrets:
+        - name: harbor-cred
+      containers:
+        - name: aiops-service
+          image: harbor.lab/library/aiops-service:v1.0.6
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8000
+          envFrom:
+            - configMapRef: {name: aiops-config}
+            - secretRef: {name: aiops-secret}
+          resources:
+            requests: {cpu: 200m, memory: 256Mi}
+            limits: {cpu: "1", memory: 1Gi}
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            initialDelaySeconds: 30
+            periodSeconds: 20

@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aiops-config
+  namespace: aiops
+data:
+  PROMETHEUS_URL: "http://192.168.1.40:9090"
+  DEEPSEEK_BASE_URL: "https://api.deepseek.com"
+  DEEPSEEK_MODEL: "deepseek-chat"
+  LLM_ENABLED: "true"
+  MAX_CONCURRENT_LLM: "3"
+  MYSQL_HOST: "mysql.kube-mall.svc.cluster.local"
+  MYSQL_PORT: "3306"
+  MYSQL_DB: "aiops"
+  MYSQL_USER: "aiops"
+  ALLOWED_NAMESPACES: "kube-mall,ingress-nginx,aiops-drill"
+  LOG_TAIL_LINES: "120"
+  MAX_LOG_CHARS: "6000"
+  DEDUP_WINDOW_MINUTES: "30"
+  PREDICT_TARGETS: "worker-1:9100,worker-2:9100,worker-3:9100"
+  # 诊断完成后补发"根因+修复方案"邮件（密码在 Secret 里）
+  SMTP_ENABLED: "true"
+  SMTP_HOST: "smtp.163.com"
+  SMTP_PORT: "465"
+  SMTP_FROM: "lujinlei996@163.com"
+  SMTP_TO: "1172022610@qq.com"

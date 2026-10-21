@@ -1,0 +1,29 @@
+# 演练八（可选，风险较高）：磁盘写满（触发 NodeDiskHigh / NodeDiskWillFillIn4Hours）
+# 应用：kubectl -n aiops-drill apply -f k8s/drills/disk-hog.yaml
+# 恢复：kubectl -n aiops-drill delete pod disk-hog; 并在 worker-3 上 rm -f /tmp/aiops-drill/fill.bin
+apiVersion: v1
+kind: Pod
+metadata:
+  name: disk-hog
+  labels: {app: disk-hog, drill: disk}
+spec:
+  nodeName: worker-3
+  restartPolicy: Never
+  containers:
+    - name: disk-hog
+      image: harbor.lab/library/aiops-toolbox:1.0
+      imagePullPolicy: IfNotPresent
+      command:
+        - sh
+        - -c
+        - |
+          fallocate -l 6G /host/fill.bin || dd if=/dev/zero of=/host/fill.bin bs=1M count=6144
+          sleep 600
+      volumeMounts:
+        - name: host-tmp
+          mountPath: /host
+  volumes:
+    - name: host-tmp
+      hostPath:
+        path: /tmp/aiops-drill
+        type: DirectoryOrCreate

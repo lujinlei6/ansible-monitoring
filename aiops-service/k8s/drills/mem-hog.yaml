@@ -1,0 +1,25 @@
+# 演练二：容器 OOMKilled（触发 KubeContainerOOMKilled）
+# 应用：kubectl -n aiops-drill apply -f k8s/drills/mem-hog.yaml
+# 恢复：kubectl -n aiops-drill delete pod mem-hog
+apiVersion: v1
+kind: Pod
+metadata:
+  name: mem-hog
+  labels: {app: mem-hog, drill: oom}
+spec:
+  nodeName: worker-2
+  restartPolicy: Always
+  containers:
+    - name: mem-hog
+      image: harbor.lab/library/aiops-toolbox:1.0
+      imagePullPolicy: IfNotPresent
+      command:
+        - python3
+        - -c
+        - |
+          chunks = []
+          while True:
+              chunks.append(bytearray(50 * 1024 * 1024))
+      resources:
+        requests: {memory: "128Mi"}
+        limits: {memory: "256Mi"}

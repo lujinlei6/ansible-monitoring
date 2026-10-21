@@ -1,0 +1,24 @@
+# 演练三：CrashLoopBackOff（容器启动后主动退出，退出码 1）
+# 应用：kubectl -n aiops-drill apply -f k8s/drills/crash-loop.yaml
+# 恢复：kubectl -n aiops-drill delete deploy crash-loop
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crash-loop
+  labels: {app: crash-loop, drill: crashloop}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: crash-loop}
+  template:
+    metadata:
+      labels: {app: crash-loop, drill: crashloop}
+    spec:
+      containers:
+        - name: crash-loop
+          image: harbor.lab/library/aiops-toolbox:1.0
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "-c", "echo starting; exit 1"]
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: 200m, memory: 128Mi}

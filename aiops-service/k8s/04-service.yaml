@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: aiops-service
+  namespace: aiops
+  annotations:
+    metallb.universe.tf/loadBalancerIPs: "192.168.1.53"
+spec:
+  type: LoadBalancer
+  selector:
+    app: aiops-service
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+      nodePort: 30202

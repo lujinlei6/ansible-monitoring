@@ -1,0 +1,13 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+httpx==0.28.1
+pydantic==2.10.4
+pydantic-settings==2.7.1
+pymysql==1.1.1
+cryptography==44.0.0
+prometheus-client==0.21.1
+kubernetes==31.0.0
+pandas==2.2.3
+numpy==2.2.1
+statsmodels==0.14.4
+APScheduler==3.11.0

@@ -1,0 +1,21 @@
+# 演练一：节点 CPU 打满（触发 NodeCpuHigh）
+# 应用：kubectl -n aiops-drill apply -f k8s/drills/cpu-hog.yaml
+# 恢复：kubectl -n aiops-drill delete pod cpu-hog
+# 注意：本实验环境 worker-1 仅 2 核且已被 mysql 等占用，故 requests 调低为 100m
+#       （requests 只影响调度，limits=2 仍可让 stress-ng 吃满 2 核）
+apiVersion: v1
+kind: Pod
+metadata:
+  name: cpu-hog
+  labels: {app: cpu-hog, drill: cpu}
+spec:
+  nodeName: worker-1
+  restartPolicy: Never
+  containers:
+    - name: cpu-hog
+      image: harbor.lab/library/aiops-toolbox:1.0
+      imagePullPolicy: IfNotPresent
+      command: ["stress-ng", "--cpu", "2", "--timeout", "1800s"]
+      resources:
+        requests: {cpu: "100m"}
+        limits: {cpu: "2"}
