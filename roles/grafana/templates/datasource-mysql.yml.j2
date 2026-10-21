@@ -1,0 +1,30 @@
+# Grafana MySQL 数据源自动配置（只读 aiops 库，供 AI 分析看板使用）
+# 分发到：/etc/grafana/provisioning/datasources/mysql.yml
+# 说明：通过 kube-mall MySQL 的 NodePort 30306 连接，仅授予 aiops_ro 只读权限
+#       deleteDatasources 用于在 Grafana 13 下安全地重建/固定 uid（详见 prometheus.yml）
+apiVersion: 1
+deleteDatasources:
+  - name: AIOps-MySQL
+    orgId: 1
+datasources:
+  - name: AIOps-MySQL
+    uid: aiops-mysql
+    type: mysql
+    access: proxy
+    url: "{{ mysql_nodeport_host }}:{{ mysql_aiops_nodeport }}"
+    database: aiops
+    user: aiops_ro
+    isDefault: false
+    editable: false
+    secureJsonData:
+      password: "{{ aiops_mysql_ro_password }}"
+    jsonData:
+      maxOpenConns: 5
+      maxIdleConns: 2
+      connMaxLifetime: 14400
+      # aiops 库内所有时间戳按 UTC 存储，而 MySQL 会话时区为 +08:00；
+      # 若不显式指定会话时区，Grafana 会把 DATETIME 当作 +08:00 解析，
+      # 预测曲线等时间列会整体前移 8 小时，超出面板时间范围并提示
+      # “Data outside time range”。此处置为 +00:00 与存储对齐。
+      # 注意：Grafana MySQL 插件的 jsonData 字段名是 timezone（不是 sessionTimeZone）。
+      timezone: "+00:00"

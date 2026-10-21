@@ -62,3 +62,15 @@ alert_email_to: "1172022610@qq.com"               # 收件邮箱（可与发件�
 # 本文固定用 node1 只是"选一扇固定的门"；该节点整机故障时此 target 会 DOWN（属预期告警）。
 # 可选进阶：改成 keepalived VIP "192.168.172.100"，只要还有 master 存活就能采集。
 middleware_target_ip: "192.168.1.71"
+
+# ---------- 项目二新增：AIOps / ingress / aiops 数据库端口 ----------
+ingress_metrics_nodeport: 30201          # ingress-nginx metrics NodePort
+aiops_nodeport: 30202                    # aiops-service NodePort（供 Prometheus 抓取）
+aiops_vip: "192.168.1.53"                # MetalLB 自动分配的 aiops-service VIP
+aiops_webhook_url: "http://192.168.1.53:8000/api/v1/alerts"   # Alertmanager → AI 服务
+mysql_aiops_nodeport: 30306              # kube-mall MySQL NodePort（Grafana 只读 aiops 库）
+mysql_nodeport_host: "192.168.1.71"      # Grafana 连 MySQL 时使用的节点 IP
+
+# ---------- aiops 库账号（阶段二创建；未纳入 Vault，暂存明文，与现有仓库风格一致）----------
+aiops_mysql_password: "AIOps@2026db"          # AI 服务读写用户
+aiops_mysql_ro_password: "AIOps@2026ro"       # Grafana 只读用户

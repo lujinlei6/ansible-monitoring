@@ -30,6 +30,24 @@
     mode: "0640"
   notify: restart grafana
 
+- name: 分发 MySQL 数据源配置（AIOps 只读库）
+  ansible.builtin.template:
+    src: datasource-mysql.yml.j2
+    dest: /etc/grafana/provisioning/datasources/mysql.yml
+    owner: root
+    group: grafana
+    mode: "0640"
+  notify: restart grafana
+
+- name: 分发看板 JSON
+  ansible.builtin.copy:
+    src: "dashboards/"
+    dest: /var/lib/grafana/dashboards/
+    owner: grafana
+    group: grafana
+    mode: "0644"
+  notify: restart grafana
+
 - name: 分发看板供应商配置
   ansible.builtin.template:
     src: dashboards-provider.yml.j2

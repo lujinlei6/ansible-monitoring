@@ -46,14 +46,19 @@ groups:
           description: "慢查询持续产生（约 {{ printf \"%.2f\" $value }} 次/秒），建议检查 slow log 与索引。（MySQL 8.4+ 中该状态变量已移除，如版本较新可删掉本规则）"
 
       # ---- P1：Redis 不可达 ----
+      # 注意：redis_exporter 是独立 Deployment，Redis 宕机时 exporter 仍可被采集(up=1)，
+      #       真正的不可达信号是 exporter 上报的 redis_up == 0，故以它为主判据。
       - alert: RedisDown
-        expr: up{job="redis_exporter"} == 0
+        expr: |
+          redis_up == 0
+          or
+          up{job="redis_exporter"} == 0
         for: 1m
         labels:
           severity: critical
         annotations:
           summary: "Redis 监控目标不可达"
-          description: "{{ $labels.instance }} 采集失败：Redis 宕机或 exporter 异常，缓存层故障将影响全部业务。"
+          description: "{{ $labels.instance }} Redis 不可达或 exporter 采集失败：缓存层故障将影响全部业务。"
 
       # ---- P2：Redis 内存使用率过高（需已配置 maxmemory）----
       - alert: RedisMemoryHigh

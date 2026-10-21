@@ -1,0 +1,597 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "id": 1,
+      "title": "收到告警速率（按 severity）",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by(severity)(rate(aiops_alerts_received_total[5m]))",
+          "instant": false,
+          "range": true,
+          "legendFormat": "{{severity}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "pluginVersion": "11.0.0"
+    },
+    {
+      "id": 2,
+      "title": "诊断来源占比（24h）",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 12,
+        "y": 0
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by(source)(increase(aiops_diagnoses_total[24h]))",
+          "instant": false,
+          "range": true,
+          "legendFormat": "{{source}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto"
+      },
+      "pluginVersion": "11.0.0"
+    },
+    {
+      "id": 3,
+      "title": "LLM 错误率",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "rate(aiops_llm_errors_total[5m])",
+          "instant": false,
+          "range": true,
+          "legendFormat": "errors"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "pluginVersion": "11.0.0"
+    },
+    {
+      "id": 4,
+      "title": "诊断耗时 P95",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by(le)(rate(aiops_diagnosis_duration_seconds_bucket[5m])))",
+          "instant": false,
+          "range": true,
+          "legendFormat": "P95"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "pluginVersion": "11.0.0"
+    },
+    {
+      "id": 5,
+      "title": "风险评分（按实例）",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 0,
+        "y": 16
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "max by(instance)(aiops_risk_score)",
+          "instant": false,
+          "range": true,
+          "legendFormat": "{{instance}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 60
+              },
+              {
+                "color": "red",
+                "value": 90
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto"
+      },
+      "pluginVersion": "11.0.0"
+    },
+    {
+      "id": 6,
+      "title": "最新事件表（MySQL）",
+      "type": "table",
+      "datasource": {
+        "type": "mysql",
+        "uid": "aiops-mysql"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 21
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "mysql",
+            "uid": "aiops-mysql"
+          },
+          "format": "table",
+          "rawSql": "SELECT created_at AS time, alertname, severity, status, instance FROM incidents ORDER BY created_at DESC LIMIT 50"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      },
+      "pluginVersion": "11.0.0"
+    },
+    {
+      "id": 7,
+      "title": "最新诊断表（MySQL）",
+      "type": "table",
+      "datasource": {
+        "type": "mysql",
+        "uid": "aiops-mysql"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 30
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "mysql",
+            "uid": "aiops-mysql"
+          },
+          "format": "table",
+          "rawSql": "SELECT d.created_at AS time, i.alertname, d.risk_level, d.confidence, d.source, d.root_cause , d.fix_plan FROM diagnoses d JOIN incidents i ON d.incident_id=i.id ORDER BY d.created_at DESC LIMIT 20"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      },
+      "pluginVersion": "11.0.0"
+    },
+    {
+      "id": 8,
+      "title": "预测曲线 · $metric @ $instance（ARIMA 未来 24h，% ）",
+      "type": "timeseries",
+      "datasource": {
+        "type": "mysql",
+        "uid": "aiops-mysql"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 39
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "mysql",
+            "uid": "aiops-mysql"
+          },
+          "format": "time_series",
+          "rawSql": "SELECT target_time AS time, predicted_value AS \"预测值(估算)\", upper_bound AS \"上界(+2xRMSE)\", lower_bound AS \"下界(-2xRMSE)\" FROM predictions WHERE metric = '$metric' AND instance = '$instance' ORDER BY target_time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 2
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "下界(-2xRMSE)"
+            },
+            "properties": [
+              {
+                "id": "custom.fillBelowTo",
+                "value": "上界(+2xRMSE)"
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 0
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 14
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "上界(+2xRMSE)"
+            },
+            "properties": [
+              {
+                "id": "custom.lineWidth",
+                "value": 0
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "预测值(估算)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "pluginVersion": "11.0.0",
+      "timeFrom": "now-1h",
+      "timeTo": "now+24h"
+    },
+    {
+      "id": 9,
+      "title": "预测误差（MySQL）",
+      "type": "table",
+      "datasource": {
+        "type": "mysql",
+        "uid": "aiops-mysql"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 39
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "mysql",
+            "uid": "aiops-mysql"
+          },
+          "format": "table",
+          "rawSql": "SELECT MAX(created_at) AS time, metric, instance, model, MAX(mae) AS mae, MAX(rmse) AS rmse, MAX(mape) AS mape FROM predictions GROUP BY metric, instance, model ORDER BY time DESC"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "filterable": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      },
+      "pluginVersion": "11.0.0"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": [
+    "k8s-mall",
+    "aiops"
+  ],
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "AI 分析",
+  "uid": "ai-analysis",
+  "version": 1,
+  "weekStart": "",
+  "templating": {
+    "list": [
+      {
+        "name": "metric",
+        "label": "指标",
+        "type": "custom",
+        "query": "cpu,memory,disk",
+        "current": {
+          "selected": true,
+          "text": "cpu",
+          "value": "cpu"
+        },
+        "options": [
+          {
+            "selected": true,
+            "text": "cpu",
+            "value": "cpu"
+          },
+          {
+            "selected": false,
+            "text": "memory",
+            "value": "memory"
+          },
+          {
+            "selected": false,
+            "text": "disk",
+            "value": "disk"
+          }
+        ],
+        "includeAll": false,
+        "multi": false,
+        "hide": 0
+      },
+      {
+        "name": "instance",
+        "label": "节点",
+        "type": "custom",
+        "query": "worker-1:9100,worker-2:9100,worker-3:9100",
+        "current": {
+          "selected": true,
+          "text": "worker-1:9100",
+          "value": "worker-1:9100"
+        },
+        "options": [
+          {
+            "selected": true,
+            "text": "worker-1:9100",
+            "value": "worker-1:9100"
+          },
+          {
+            "selected": false,
+            "text": "worker-2:9100",
+            "value": "worker-2:9100"
+          },
+          {
+            "selected": false,
+            "text": "worker-3:9100",
+            "value": "worker-3:9100"
+          }
+        ],
+        "includeAll": false,
+        "multi": false,
+        "hide": 0
+      }
+    ]
+  }
+}

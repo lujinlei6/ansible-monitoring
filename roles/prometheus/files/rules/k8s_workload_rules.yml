@@ -1,0 +1,148 @@
+# ============================================================
+# 工作负载与业务入口告警（kube-state-metrics + ingress-nginx）
+# 与原有 k8s_rules.yml（控制面组件）互补
+# 由 Prometheus 的 rule_files 通配加载（/etc/prometheus/rules/*.yml）
+# ============================================================
+groups:
+  - name: k8s-workload-rules
+    rules:
+
+      # ---- P2：容器 CrashLoopBackOff ----
+      # 注意：本环境 KSM 对崩溃重启的容器上报的是 terminated_reason="Error"，
+      #       而不会上报 waiting_reason="CrashLoopBackOff"（waiting 恒为 0）。
+      # 用 max_over_time 容忍“容器短暂启动”造成的指标缺口，避免 for 计时被反复重置。
+      - alert: KubePodCrashLooping
+        expr: |
+          max_over_time(
+            kube_pod_container_status_terminated_reason{reason="Error"}[10m]
+          ) == 1
+          and on (namespace, pod, container)
+          increase(kube_pod_container_status_restarts_total[15m]) > 2
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} 容器 {{ $labels.container }} CrashLoopBackOff"
+          description: "容器持续崩溃重启超过 5 分钟，请查看 kubectl logs --previous 与退出码。"
+
+      # ---- P2：镜像拉取失败 ----
+      - alert: KubeImagePullFailed
+        expr: |
+          max by (namespace, pod, container) (
+            kube_pod_container_status_waiting_reason{reason=~"ImagePullBackOff|ErrImagePull"} == 1
+          ) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} 镜像拉取失败"
+          description: "容器 {{ $labels.container }} 处于 ImagePullBackOff/ErrImagePull，检查镜像地址、Harbor 凭据与网络。"
+
+      # ---- P1：容器 OOMKilled ----
+      # 仅在“最近 15 分钟确实发生过重启”时触发，避免历史 OOM 永久告警
+      - alert: KubeContainerOOMKilled
+        expr: |
+          (
+            kube_pod_container_status_last_terminated_reason{reason="OOMKilled"} == 1
+          )
+          and on (namespace, pod, container)
+          (
+            increase(kube_pod_container_status_restarts_total[15m]) > 0
+          )
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} 容器 {{ $labels.container }} 发生 OOMKilled"
+          description: "容器内存超过 limit 被内核杀死。结合内存曲线判断是泄漏、峰值还是 limit 过小。"
+
+      # ---- P2：Pod 持续未就绪 ----
+      - alert: KubePodNotReady
+        expr: |
+          (
+            sum by (namespace, pod) (
+              kube_pod_status_ready{condition="false"} == 1
+            ) > 0
+          )
+          unless on (namespace, pod)
+          (
+            kube_pod_status_phase{phase="Succeeded"} == 1
+          )
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} 持续未就绪"
+          description: "Pod Ready 条件为 false 超过 10 分钟，检查调度、镜像、探针与节点资源。"
+
+      # ---- P1：Deployment 可用副本不足 ----
+      - alert: KubeDeploymentReplicasMismatch
+        expr: |
+          (
+            kube_deployment_spec_replicas{namespace="kube-mall"}
+            - kube_deployment_status_replicas_available{namespace="kube-mall"}
+          ) > 0
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Deployment {{ $labels.namespace }}/{{ $labels.deployment }} 可用副本不足"
+          description: "期望副本数与可用副本数存在差值，业务容量可能下降。"
+
+      # ---- P2：HPA 已顶到最大副本 ----
+      - alert: KubeHPAMaxedOut
+        expr: |
+          kube_horizontalpodautoscaler_status_current_replicas{namespace="kube-mall"}
+          >=
+          kube_horizontalpodautoscaler_spec_max_replicas{namespace="kube-mall"}
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "HPA {{ $labels.namespace }}/{{ $labels.horizontalpodautoscaler }} 已达最大副本"
+          description: "继续扩容无效，需检查单 Pod 性能瓶颈或提高 maxReplicas。"
+
+  - name: ingress-slo-rules
+    rules:
+
+      # ---- P1：Ingress 5xx 比例过高 ----
+      - alert: Ingress5xxHigh
+        expr: |
+          sum by (host) (rate(nginx_ingress_controller_requests{status=~"5.."}[5m]))
+          /
+          sum by (host) (rate(nginx_ingress_controller_requests[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "域名 {{ $labels.host }} 5xx 比例超过 5%"
+          description: "用户侧错误率持续偏高，结合后端副本数、Pod 日志与 Ingress 日志定位。"
+
+      # ---- P2：Ingress P95 延迟过高 ----
+      - alert: IngressP95LatencyHigh
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le, host) (
+              rate(nginx_ingress_controller_request_duration_seconds_bucket[5m])
+            )
+          ) > 2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "域名 {{ $labels.host }} P95 延迟超过 2 秒"
+          description: "检查后端 Pod CPU/内存、数据库慢查询与连接池。"
+
+      # ---- P1：mall 后端完全不可用 ----
+      - alert: MallBackendUnavailable
+        expr: |
+          kube_deployment_status_replicas_available{
+            namespace="kube-mall",
+            deployment=~"mall4j-admin|mall4j-api"
+          } < 1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "mall 后端 {{ $labels.deployment }} 可用副本为 0"
+          description: "业务已不可用，优先检查 Pod 状态、事件与最近日志。"

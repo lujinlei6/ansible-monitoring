@@ -1,0 +1,20 @@
+# ============================================================
+# 暴露 ingress-nginx 的 metrics 端口（10254）为 NodePort 30201
+# 供 Prometheus 抓取用户侧 5xx / 延迟等 SLO 指标
+# 应用：kubectl apply -f k8s/ingress-nginx-metrics-nodeport.yaml
+# ============================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: ingress-nginx-metrics
+  namespace: ingress-nginx
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: ingress-nginx
+    app.kubernetes.io/component: controller
+  ports:
+    - name: metrics
+      port: 10254
+      targetPort: 10254
+      nodePort: 30201

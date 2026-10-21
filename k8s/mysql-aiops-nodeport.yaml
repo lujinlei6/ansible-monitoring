@@ -1,0 +1,19 @@
+# ============================================================
+# kube-mall MySQL 的 NodePort Service（仅 Grafana 只读 aiops 库用）
+# 应用：kubectl apply -f k8s/mysql-aiops-nodeport.yaml
+# 安全提示：仅实验网段可访问，生产环境不要这样暴露数据库
+# ============================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql-aiops-nodeport
+  namespace: kube-mall
+spec:
+  type: NodePort
+  selector:
+    app: mysql
+  ports:
+    - name: mysql
+      port: 3306
+      targetPort: 3306
+      nodePort: 30306

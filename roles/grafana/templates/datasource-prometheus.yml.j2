@@ -1,12 +1,19 @@
 # Grafana 数据源自动配置（Provisioning，无需手工在 UI 里点选）
 # 分发到：/etc/grafana/provisioning/datasources/prometheus.yml
+# 注意 1：uid 固定为 prometheus，看板 JSON 里 datasource.uid 必须与此一致
+# 注意 2：Grafana 13 下“按 uid 更新已存在数据源”会报 data source not found 并导致
+#         grafana-server 崩溃重启；必须先按 name 删除再重建（deleteDatasources）
 apiVersion: 1
+deleteDatasources:
+  - name: Prometheus
+    orgId: 1
 datasources:
   - name: Prometheus
+    uid: prometheus
     type: prometheus
     access: proxy
-    url: http://localhost:9090        # Grafana 与 Prometheus 同机
+    url: http://192.168.1.40:9090        # Grafana 与 Prometheus 同机
     isDefault: true
-    editable: false                   # 由配置管理，禁止 UI 误改
+    editable: false                     # 由配置管理，禁止 UI 误改
     jsonData:
-      timeInterval: 15s               # 与 scrape_interval 一致，提升查询性能
+      timeInterval: 15s                 # 与 scrape_interval 一致，提升查询性能

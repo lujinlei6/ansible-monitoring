@@ -1,9 +1,10 @@
 # ============================================================
 # Prometheus 主配置（由 Ansible 模板生成到 /etc/prometheus/prometheus.yml）
-# 11 个采集任务：
+# 13 个采集任务：
 #   1 prometheus 自身 | 2 node_exporter(7台) | 3 mysqld | 4 redis
 #   5 apiserver | 6 scheduler | 7 controller-manager | 8 kubelet | 9 etcd
 #   10 kubelet 的 cAdvisor（容器资源）| 11 kube-state-metrics（对象状态）
+#   12 ingress-nginx（用户侧 5xx/延迟）| 13 aiops-service（AIOps 自定义指标）
 # ============================================================
 global:
   scrape_interval: 15s            # 采集间隔
@@ -184,3 +185,20 @@ scrape_configs:
   - job_name: kube-state-metrics
     static_configs:
       - targets: ["{{ middleware_target_ip }}:{{ kube_state_metrics_nodeport }}"]
+
+  # ===== 12. ingress-nginx（用户侧 5xx / 延迟，NodePort 30201）=====
+  # 指标前缀 nginx_ingress_controller_*：按 status/host 统计请求与延迟直方图
+  - job_name: ingress-nginx
+    static_configs:
+      - targets: ["{{ middleware_target_ip }}:{{ ingress_metrics_nodeport }}"]
+        labels:
+          role: ingress
+
+  # ===== 13. aiops-service 自身指标（AIOps 自定义指标，NodePort 30202）=====
+  # 阶段三部署完成后 target 转 UP；在此之前 DOWN 属预期
+  - job_name: aiops-service
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["{{ middleware_target_ip }}:{{ aiops_nodeport }}"]
+        labels:
+          role: aiops
